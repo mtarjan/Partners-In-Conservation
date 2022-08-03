@@ -28,39 +28,49 @@ reticulate::use_condaenv(condaenv='C:/Program Files/ArcGIS/Pro/bin/Python/envs/a
 
 library(sf)
 library(tidyverse)
+library(exactextractr); library(raster) ##only required for internal r functions
 #library(readxl)
 
 arcpy<-import("arcpy")
 
-##CREATE OUTPUT FOLDER
-if (!file.exists(str_c("Output-", Sys.Date()))) {
-  dir.create(str_c("Output-", Sys.Date()))
-}
-
 ##LOAD SPATIAL LAYERS
 ##layer of spatial extent for selecting species
-boundary.path<-"G:/cameron/BLM_SMA_overlay/03_SMAgrouped_x_AdminUnits_dsslv.shp"
+#boundary.path<-"G:/cameron/BLM_SMA_overlay/03_SMAgrouped_x_AdminUnits_dsslv.shp"
+##start with boundary in mobi projection
+boundary.path<-"Data/BLM_National_Surface_Management_Agency/03_SMAgrouped_x_AdminUnits_NAD83.shp"
 
 ##biotics snapshot
 distribution.data.path <- list.files("H://spp_models/", recursive = TRUE, pattern = "MOBI.tif$", full.names = TRUE)
 
+##SELECT SPECIES FOR OUTPUTS
+library(readxl)
+mobimodels<-read_excel("G:/tarjan/Species-select/Data/MoBI Modeling Summary by Species January 2021.xlsx", sheet = "MoBI_Model_Assessment", skip = 2) %>% data.frame()
+colnames(mobimodels)[1:7]<-c("ELEMENT_GLOBAL_ID", "ELEMENT_GLOBAL_ID2", "cutecode", "Broad Group", "Taxonomic Group", "Scientific Name", "Common Name")
+ja.species <- read_excel("BLMSSS-JA-species-shortlist.xlsx") %>% data.frame()
+ja.species <- left_join(x = ja.species, y = subset(mobimodels, select = c(cutecode, `Scientific Name`, ELEMENT_GLOBAL_ID)), by = c("NatureServe.Element.ID" = "ELEMENT_GLOBAL_ID"))
+ja.cutecodes<-subset(ja.species, !is.na(cutecode))$cutecode
+
 dir.create("temp_files")
 jur.dat <- dim(0) ##jurisdictional analysis data output
-for (j in 1:length(distribution.data.path)) { ##for each model; length(distribution.data.path)
+for (j in 1254:length(distribution.data.path)) { ##for each model; length(distribution.data.path)
   ##find species
-  sp.temp<-str_split(distribution.data.path[j], "/")[[1]][length(str_split(distribution.data.path[j], "/")[[1]])] %>% str_sub(start = 1, end = 8)
+  sp.temp<-str_split(str_split(distribution.data.path[j], "/")[[1]][length(str_split(distribution.data.path[j], "/")[[1]])], pattern="_")[[1]][1]
+  
+  ##skip it if it's been done or if it's not on the shortlist
+  if (!sp.temp %in% ja.cutecodes) {next}
+  
   ##convert model raster to polygon
   arcpy$conversion$RasterToPolygon(distribution.data.path[j], paste0("temp_files/",sp.temp,"_poly.shp"), "NO_SIMPLIFY", "Value", "SINGLE_OUTER_PART")
+  ##plot polygon
+  #plot(read_sf(paste0("temp_files/",sp.temp,"_poly.shp")))
   ##clip model by boundary
     arcpy$Clip_analysis(in_features = boundary.path, clip_features = paste0("temp_files/",sp.temp,"_poly.shp"), out_feature_class = paste0("temp_files/",sp.temp,"_clip"))
-  ##remove overlaps in jurisdictional boundaries; doesn't fix area issue
-    #arcpy$analysis$RemoveOverlapMultiple(in_features = paste0("temp_files/",sp.temp,"_clip.shp"), out_feature_class = paste0("temp_files/",sp.temp,"_RemoveOverlap"), method = "CENTER_LINE", join_attributes = "ALL")
   
   ##total area of model
   total.area.temp <- st_area(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))) %>% sum()
   ##us sf package to open clipped shapefile
   sp.manage <- read_sf(paste0("temp_files/",sp.temp,"_clip.shp"))
-  ##reproject
+  ##reproject; not required if project initial input boundary
   sp.manage <- st_transform(x = sp.manage, st_crs(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))))
   ##calculate area in each region
   sp.manage$area_m2 <- st_area(sp.manage)
@@ -69,6 +79,7 @@ for (j in 1:length(distribution.data.path)) { ##for each model; length(distribut
   dat.temp$total.area<-sum(dat.temp$area_m2)
   #dat.temp$total.area.original<-total.area.temp ##equivalent to sum of management pieces
   dat.temp$cutecode<-sp.temp
+  dat.temp$j<-j
   
   ##add to overall data.frame
   jur.dat<-rbind(jur.dat, dat.temp)
@@ -76,5 +87,17 @@ for (j in 1:length(distribution.data.path)) { ##for each model; length(distribut
   print(j)
 }
 
-##wrangle data into final output
+##ALTERNATIVE APPROACH; R PACKAGE
+boundary<-read_sf(boundary.path) ##only needed if doing internal r functions
+##extract sum of raster values and add them up; then convert to area
+mobi.temp<-raster(distribution.data.path[1])
+boundary.nad <- st_transform(x = boundary, st_crs(mobi.temp))
+boundary$sum <- exactextractr::exact_extract(x = mobi.temp, y = boundary.nad, 'sum')
 
+##ALTERNATIVE APPROACH; Tabulate Area
+arcpy$sa$TabulateArea(boundary.path, "BLM_Gen", distribution.data.path[j], "Value", paste0("temp_files/",sp.temp,"_area"), distribution.data.path[j])
+
+
+##wrangle data into final output
+##add species name and explorer ID from mobi spreadsheet
+##sum all BLM_Gen =="BLM" and get a percentage
