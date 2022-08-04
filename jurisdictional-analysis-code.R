@@ -46,7 +46,7 @@ distribution.data.path <- list.files("H://spp_models/", recursive = TRUE, patter
 mobimodels<-read_excel("G:/tarjan/Species-select/Data/MoBI Modeling Summary by Species January 2021.xlsx", sheet = "MoBI_Model_Assessment", skip = 2) %>% data.frame()
 colnames(mobimodels)[1:7]<-c("ELEMENT_GLOBAL_ID", "ELEMENT_GLOBAL_ID2", "cutecode", "Broad Group", "Taxonomic Group", "Scientific Name", "Common Name")
 ja.species <- read_excel("Data/BLMSSS-JA-species-shortlist.xlsx") %>% data.frame()
-ja.species <- left_join(x = ja.species, y = subset(mobimodels, select = c(cutecode, `Scientific Name`, ELEMENT_GLOBAL_ID)), by = c("NatureServe.Element.ID" = "ELEMENT_GLOBAL_ID"))
+ja.species <- left_join(x = ja.species, y = subset(mobimodels, select = c(cutecode, `Scientific Name`, ELEMENT_GLOBAL_ID, Included.in.MoBI)), by = c("NatureServe.Element.ID" = "ELEMENT_GLOBAL_ID"))
 ja.cutecodes<-subset(ja.species, !is.na(cutecode))$cutecode
 ##remove cutecodes that have already been completed
 ja.cutecodes<-subset(data.frame(ja.cutecodes), !(ja.cutecodes %in% out$cutecode) & ja.cutecodes != "myotsept")$ja.cutecodes
@@ -119,6 +119,16 @@ head(out)
 
 ##output only the species that Bruce needs for preliminary list
 ja.results.shortlist <- left_join(ja.species, subset(out, select = c(cutecode, model.area, BLM, percent.model.area.BLM)))
-write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220804.csv", row.names = F)
 
-##add to 
+##add to BLM SSS list
+blmsss<-read_excel("Data/BLM - Information for T & E Strategic Decision-Making - April 2021.xlsx", sheet= "BLM SSS Information by State", skip = 1)[,1:11]
+names(blmsss)
+blmsss$percent.EOs.BLM <- round(blmsss$`Total Occurrences on BLM Lands (West)`/blmsss$`Total Occurrences Rangewide`*100, 3)
+ja.results.shortlist<-left_join(ja.results.shortlist, subset(blmsss, select = c(`Element Global ID`, percent.EOs.BLM)), by = c("NatureServe.Element.ID"="Element Global ID"))
+
+write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220804.csv", row.names = F, na= "")
+
+##compare JA from EOs versus models
+plot(data = ja.results.shortlist, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7846)
+##fit a linear regression
+ja.lm <- lm(percent.model.area.BLM ~ 0 + percent.EOs.BLM, data = ja.results.shortlist)
