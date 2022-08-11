@@ -41,42 +41,53 @@ boundary.path<-"Data/BLM_National_Surface_Management_Agency/BLM_Lands_NAD83.shp"
 
 ##biotics snapshot
 distribution.data.path <- list.files("H://spp_models/", recursive = TRUE, pattern = "MOBI(.*?).tif$", full.names = TRUE)
+mobi.cutecodes <- str_extract(distribution.data.path, "(?<=/)[^/]*$") %>% str_extract("[:alnum:]*")
 
 ##SELECT SPECIES FOR OUTPUTS
 mobimodels<-read_excel("G:/tarjan/Species-select/Data/MoBI Modeling Summary by Species January 2021.xlsx", sheet = "MoBI_Model_Assessment", skip = 2) %>% data.frame()
 colnames(mobimodels)[1:7]<-c("ELEMENT_GLOBAL_ID", "ELEMENT_GLOBAL_ID2", "cutecode", "Broad Group", "Taxonomic Group", "Scientific Name", "Common Name")
-ja.species <- read_excel("Data/BLMSSS-JA-species-shortlist.xlsx") %>% data.frame()
-ja.species <- left_join(x = ja.species, y = subset(mobimodels, select = c(cutecode, `Scientific Name`, ELEMENT_GLOBAL_ID, Included.in.MoBI)), by = c("NatureServe.Element.ID" = "ELEMENT_GLOBAL_ID"))
-ja.cutecodes<-subset(ja.species, !is.na(cutecode))$cutecode
+#ja.species <- read_excel("Data/BLMSSS-JA-species-shortlist.xlsx") %>% data.frame()
+#ja.species <- left_join(x = ja.species, y = subset(mobimodels, select = c(cutecode, `Scientific Name`, ELEMENT_GLOBAL_ID, Included.in.MoBI)), by = c("NatureServe.Element.ID" = "ELEMENT_GLOBAL_ID"))
+#ja.cutecodes<-subset(ja.species, !is.na(cutecode))$cutecode
 ##remove cutecodes that have already been completed
-ja.cutecodes<-subset(data.frame(ja.cutecodes), !(ja.cutecodes %in% out$cutecode) & ja.cutecodes != "myotsept")$ja.cutecodes
+#ja.cutecodes<-subset(data.frame(ja.cutecodes), !(ja.cutecodes %in% out$cutecode) & ja.cutecodes != "myotsept")$ja.cutecodes
+#ja.cutecodes<-subset(data.frame(mobi.cutecodes), !(mobi.cutecodes %in% out$cutecode))$mobi.cutecodes ##select only the cutecodes that don't appear in results
 
-dir.create("temp_files")
+dir.create("temp_files")#; arcpy$management$CreateFileGDB("temp_files", "geodatabase", "CURRENT") ##only need the geodatabase if going to use tabulate area
 jur.dat <- dim(0) ##jurisdictional analysis data output
 for (j in 1:length(distribution.data.path)) { ##for each model; length(distribution.data.path)
   ##find species
   sp.temp<-str_split(str_split(distribution.data.path[j], "/")[[1]][length(str_split(distribution.data.path[j], "/")[[1]])], pattern="_")[[1]][1]
   
   ##skip it if it's been done or if it's not on the shortlist
-  if (!sp.temp %in% ja.cutecodes) {next}
+  #if (!sp.temp %in% ja.cutecodes) {next}
+  if (sp.temp %in% output$cutecode) {next} ##if it's already been done then skip it
   
   ##convert model raster to polygon
-  arcpy$conversion$RasterToPolygon(distribution.data.path[j], paste0("temp_files/",sp.temp,"_poly.shp"), "NO_SIMPLIFY", "Value", "SINGLE_OUTER_PART")
+  #arcpy$conversion$RasterToPolygon(distribution.data.path[j], paste0("temp_files/",sp.temp,"_poly.shp"), "NO_SIMPLIFY", "Value", "SINGLE_OUTER_PART")
   ##plot polygon
   #plot(read_sf(paste0("temp_files/",sp.temp,"_poly.shp")))
   ##clip model by boundary
-    arcpy$Clip_analysis(in_features = boundary.path, clip_features = paste0("temp_files/",sp.temp,"_poly.shp"), out_feature_class = paste0("temp_files/",sp.temp,"_clip"))
+    #arcpy$Clip_analysis(in_features = boundary.path, clip_features = paste0("temp_files/",sp.temp,"_poly.shp"), out_feature_class = paste0("temp_files/",sp.temp,"_clip"))
   
   ##total area of model
-  total.area.temp <- st_area(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))) %>% sum()
+  #total.area.temp <- st_area(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))) %>% sum()
   ##us sf package to open clipped shapefile
-  sp.manage <- read_sf(paste0("temp_files/",sp.temp,"_clip.shp"))
+  #sp.manage <- read_sf(paste0("temp_files/",sp.temp,"_clip.shp"))
   ##reproject; not required if project initial input boundary
-  sp.manage <- st_transform(x = sp.manage, st_crs(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))))
+  #sp.manage <- st_transform(x = sp.manage, st_crs(read_sf(paste0("temp_files/",sp.temp,"_poly.shp"))))
   ##calculate area in each region
-  sp.manage$area_m2 <- st_area(sp.manage)
+  #sp.manage$area_m2 <- st_area(sp.manage)
+  
+  ##ALTERNATIVE APPROACH; Tabulate Area
+  gdb.path<- "C:/Users/Max_Tarjan/Documents/ArcGIS/Projects/MyProject/MyProject.gdb/" ##need to write area tables to a geodatabase
+  arcpy$sa$TabulateArea(boundary.path, "BLM_Gen", distribution.data.path[j], "Value", paste0(gdb.path, sp.temp, "_area"), distribution.data.path[j])
+  dat.temp <- arc.open(path = paste0(gdb.path, sp.temp, "_area")) %>% arc.select() %>% subset(select = -OBJECTID)
+  
   ##add to data.frame
-  dat.temp<-data.frame(sp.manage) %>% subset(select = c(BLM_Gen, ADMU_NAME, area_m2))
+  #dat.temp<-data.frame(sp.manage) %>% subset(select = c(BLM_Gen, ADMU_NAME, area_m2))
+  dat.temp$ADMU_NAME<-NA
+  names(dat.temp)[2]<-"area_m2"
   dat.temp$total.area<-sum(dat.temp$area_m2)
   #dat.temp$total.area.original<-total.area.temp ##equivalent to sum of management pieces
   dat.temp$cutecode<-sp.temp
@@ -95,10 +106,6 @@ for (j in 1:length(distribution.data.path)) { ##for each model; length(distribut
 #boundary.nad <- st_transform(x = boundary, st_crs(mobi.temp))
 #boundary$sum <- exactextractr::exact_extract(x = mobi.temp, y = boundary.nad, 'sum')
 
-##ALTERNATIVE APPROACH; Tabulate Area
-#arcpy$sa$TabulateArea(boundary.path, "BLM_Gen", distribution.data.path[j], "Value", paste0("temp_files/",sp.temp,"_area"), distribution.data.path[j])
-
-
 ##wrangle data into final output
 ##add species name and explorer ID from mobi spreadsheet
 ##sum all BLM_Gen =="BLM" and get a percentage
@@ -107,28 +114,41 @@ outputs <- list.files(getwd(), recursive = F, pattern = ".csv", full.names = TRU
 output<-dim(0)
 for (j in 1:length(outputs)) {
   out.temp<-read.csv(outputs[j])
-  out.temp<-out.temp[,1:5] ##removes column called "j", which is only present for some
+  out.temp<-subset(out.temp, select = c(cutecode, BLM_Gen, ADMU_NAME, area_m2, total.area)) ##removes column called "j", which is only present for some
   output<-rbind(output, out.temp)
 }
 
-##summarize results; need a way to add 0s
-output<-unique(output) ##remove duplicates
+##check whether there are any errors where cutecodes are different but total area is equal
+#temp<-table(round(output$total.area,0), output$cutecode) %>% data.frame() %>% subset(Freq>0)
+#dups<-temp[which(duplicated(temp$Var1)),]$Var1
+#subset(output, round(total.area,0)==dups[j])
+
+##summarize results; fills 0s if the combination doesn't occur (blm gen x species)
+output <- output[which(!duplicated(subset(output, select = c(BLM_Gen, ADMU_NAME, cutecode)))),] ##remove duplicates
 out <- subset(output) %>% group_by(cutecode, BLM_Gen) %>% summarise(model.area = total.area, area_m2 = sum(area_m2)) %>% unique() %>% spread(key = BLM_Gen, value = area_m2, fill = 0) %>% data.frame()
 out$percent.model.area.BLM <- round(out$BLM/out$model.area*100, 3)
 head(out)
-
-##output only the species that Bruce needs for preliminary list
-ja.results.shortlist <- left_join(ja.species, subset(out, select = c(cutecode, model.area, BLM, percent.model.area.BLM)))
+##add other identifiers
+out<- left_join(out, subset(mobimodels, select = c(ELEMENT_GLOBAL_ID, cutecode, `Scientific Name`)))
 
 ##add to BLM SSS list
 blmsss<-read_excel("Data/BLM - Information for T & E Strategic Decision-Making - April 2021.xlsx", sheet= "BLM SSS Information by State", skip = 1)[,1:11]
 names(blmsss)
 blmsss$percent.EOs.BLM <- round(blmsss$`Total Occurrences on BLM Lands (West)`/blmsss$`Total Occurrences Rangewide`*100, 3)
-ja.results.shortlist<-left_join(ja.results.shortlist, subset(blmsss, select = c(`Element Global ID`, percent.EOs.BLM)), by = c("NatureServe.Element.ID"="Element Global ID"))
 
-write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220804.csv", row.names = F, na= "")
+blmsss.ja<- left_join(blmsss, subset(out, select = c(ELEMENT_GLOBAL_ID, cutecode, model.area, BLM, percent.model.area.BLM)), by = c("Element Global ID" = "ELEMENT_GLOBAL_ID"))
+
+write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220810.csv", row.names = F, na= "")
+  
+##output only the species that Bruce needs for preliminary list
+#ja.results.shortlist <- left_join(ja.species, subset(out, select = c(cutecode, model.area, BLM, percent.model.area.BLM)))
+
+##add eo and model info to shortlist
+#ja.results.shortlist<-left_join(ja.results.shortlist, subset(blmsss, select = c(`Element Global ID`, percent.EOs.BLM)), by = c("NatureServe.Element.ID"="Element Global ID"))
+
+#write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220808.csv", row.names = F, na= "")
 
 ##compare JA from EOs versus models
-plot(data = ja.results.shortlist, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7846)
+plot(data = blmsss.ja, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7131)
 ##fit a linear regression
-ja.lm <- lm(percent.model.area.BLM ~ 0 + percent.EOs.BLM, data = ja.results.shortlist)
+ja.lm <- lm(percent.model.area.BLM ~ 0 + percent.EOs.BLM, data = blmsss.ja); ja.lm
