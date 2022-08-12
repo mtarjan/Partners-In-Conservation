@@ -115,7 +115,7 @@ outputs <- list.files(getwd(), recursive = F, pattern = ".csv", full.names = TRU
 output<-dim(0)
 for (j in 1:length(outputs)) {
   out.temp<-read.csv(outputs[j])
-  out.temp <- rename(out.temp, c('BLM_Gen'='BLM_GEN'))
+  #out.temp <- rename(out.temp, c('BLM_Gen'='BLM_GEN'))
   out.temp<-subset(out.temp, select = c(cutecode, BLM_Gen, ADMU_NAME, area_m2, total.area)) ##removes column called "j", which is only present for some
   output<-rbind(output, out.temp)
 }
@@ -138,11 +138,13 @@ head(out)
 out<- left_join(out, subset(mobimodels, select = c(ELEMENT_GLOBAL_ID, cutecode, `Scientific Name`)))
 
 ##add to BLM SSS list
-blmsss<-read_excel("Data/BLM - Information for T & E Strategic Decision-Making - April 2021.xlsx", sheet= "BLM SSS Information by State", skip = 1)[,1:11]
-names(blmsss)
-blmsss$percent.EOs.BLM <- round(blmsss$`Total Occurrences on BLM Lands (West)`/blmsss$`Total Occurrences Rangewide`*100, 3)
+blmsss<-read_excel("Data/BLM - Compiled SSS List Information - September 2021.xlsx", sheet= "1b. BLM-NS SSS Data Summary", skip = 1)[,1:11]
+blmsss.eo<-read_excel("Data/BLM - Information for T & E Strategic Decision-Making - April 2021.xlsx", sheet= "BLM SSS Information by State", skip = 1)[,1:11] ##includes species beyond sss
+blmsss.eo$percent.EOs.BLM <- round(blmsss.eo$`Total Occurrences on BLM Lands (West)`/blmsss.eo$`Total Occurrences Rangewide`*100, 3) ##calculate % EO overlap with BLM lands
+##add EO overlap to BLM SSS list
+blmsss<-left_join(blmsss, subset(blmsss.eo, select = c(`Element Global ID`, percent.EOs.BLM))) ##add info to blm sss list (restricted to actual sss)
 
-blmsss.ja<- left_join(blmsss, subset(out, select = c(ELEMENT_GLOBAL_ID, cutecode, model.area, BLM, percent.model.area.BLM)), by = c("Element Global ID" = "ELEMENT_GLOBAL_ID"))
+blmsss.ja<- left_join(blmsss, subset(out, !is.na(ELEMENT_GLOBAL_ID), select = c(ELEMENT_GLOBAL_ID, cutecode, percent.EOs.BLM, model.area, BLM, percent.model.area.BLM)), by = c("Element Global ID" = "ELEMENT_GLOBAL_ID"))
 
 write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220812.csv", row.names = F, na= "")
   
@@ -155,6 +157,6 @@ write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220812.csv", row.names = F, na=
 #write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220808.csv", row.names = F, na= "")
 
 ##compare JA from EOs versus models
-plot(data = blmsss.ja, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7111)
+plot(data = blmsss.ja, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.717)
 ##fit a linear regression
 ja.lm <- lm(percent.model.area.BLM ~ 0 + percent.EOs.BLM, data = blmsss.ja); ja.lm
