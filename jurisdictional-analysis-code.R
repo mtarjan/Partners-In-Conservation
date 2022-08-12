@@ -53,7 +53,7 @@ colnames(mobimodels)[1:7]<-c("ELEMENT_GLOBAL_ID", "ELEMENT_GLOBAL_ID2", "cutecod
 #ja.cutecodes<-subset(data.frame(ja.cutecodes), !(ja.cutecodes %in% out$cutecode) & ja.cutecodes != "myotsept")$ja.cutecodes
 #ja.cutecodes<-subset(data.frame(mobi.cutecodes), !(mobi.cutecodes %in% out$cutecode))$mobi.cutecodes ##select only the cutecodes that don't appear in results
 
-dir.create("temp_files")#; arcpy$management$CreateFileGDB("temp_files", "geodatabase", "CURRENT") ##only need the geodatabase if going to use tabulate area
+#dir.create("temp_files")#; arcpy$management$CreateFileGDB("temp_files", "geodatabase", "CURRENT") ##only need the geodatabase if going to use tabulate area
 jur.dat <- dim(0) ##jurisdictional analysis data output
 for (j in 1:length(distribution.data.path)) { ##for each model; length(distribution.data.path)
   ##find species
@@ -61,7 +61,7 @@ for (j in 1:length(distribution.data.path)) { ##for each model; length(distribut
   
   ##skip it if it's been done or if it's not on the shortlist
   #if (!sp.temp %in% ja.cutecodes) {next}
-  if (sp.temp %in% output$cutecode) {next} ##if it's already been done then skip it
+  #if (sp.temp %in% output$cutecode) {next} ##if it's already been done then skip it
   
   ##convert model raster to polygon
   #arcpy$conversion$RasterToPolygon(distribution.data.path[j], paste0("temp_files/",sp.temp,"_poly.shp"), "NO_SIMPLIFY", "Value", "SINGLE_OUTER_PART")
@@ -114,6 +114,7 @@ outputs <- list.files(getwd(), recursive = F, pattern = ".csv", full.names = TRU
 output<-dim(0)
 for (j in 1:length(outputs)) {
   out.temp<-read.csv(outputs[j])
+  out.temp <- rename(out.temp, c('BLM_Gen'='BLM_GEN'))
   out.temp<-subset(out.temp, select = c(cutecode, BLM_Gen, ADMU_NAME, area_m2, total.area)) ##removes column called "j", which is only present for some
   output<-rbind(output, out.temp)
 }
@@ -122,6 +123,10 @@ for (j in 1:length(outputs)) {
 #temp<-table(round(output$total.area,0), output$cutecode) %>% data.frame() %>% subset(Freq>0)
 #dups<-temp[which(duplicated(temp$Var1)),]$Var1
 #subset(output, round(total.area,0)==dups[j])
+#for (j in 2:nrow(output)) {
+#  if (output$cutecode[j]!=output$cutecode[j-1] & output$total.area[j]==output$total.area[j-1]) {print(j)} ##print out j if the cutecode is different from the species above but the area is the same
+#}
+#output %>% group_by(cutecode) %>% summarise(diff=max(total.area)-min(total.area)) %>% subset(diff != 0) %>% head() ##show species that have two different values for total.area, indictating that there was an error in writing out the data (e.g., the got their area value from the previous species in the que)
 
 ##summarize results; fills 0s if the combination doesn't occur (blm gen x species)
 output <- output[which(!duplicated(subset(output, select = c(BLM_Gen, ADMU_NAME, cutecode)))),] ##remove duplicates
@@ -138,7 +143,7 @@ blmsss$percent.EOs.BLM <- round(blmsss$`Total Occurrences on BLM Lands (West)`/b
 
 blmsss.ja<- left_join(blmsss, subset(out, select = c(ELEMENT_GLOBAL_ID, cutecode, model.area, BLM, percent.model.area.BLM)), by = c("Element Global ID" = "ELEMENT_GLOBAL_ID"))
 
-write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220810.csv", row.names = F, na= "")
+write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220812.csv", row.names = F, na= "")
   
 ##output only the species that Bruce needs for preliminary list
 #ja.results.shortlist <- left_join(ja.species, subset(out, select = c(cutecode, model.area, BLM, percent.model.area.BLM)))
@@ -149,6 +154,6 @@ write.csv(blmsss.ja, "Output/BLMSSS-JA-results-20220810.csv", row.names = F, na=
 #write.csv(ja.results.shortlist, "Output/BLMSSS-JA-shortlist-results-20220808.csv", row.names = F, na= "")
 
 ##compare JA from EOs versus models
-plot(data = blmsss.ja, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7131)
+plot(data = blmsss.ja, percent.model.area.BLM~percent.EOs.BLM, ylab = "Percent Model on BLM Lands", xlab = "Percent EOs on BLM Lands"); abline(a=0, b=0.7111)
 ##fit a linear regression
 ja.lm <- lm(percent.model.area.BLM ~ 0 + percent.EOs.BLM, data = blmsss.ja); ja.lm
