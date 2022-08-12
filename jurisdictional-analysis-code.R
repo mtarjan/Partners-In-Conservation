@@ -53,7 +53,7 @@ colnames(mobimodels)[1:7]<-c("ELEMENT_GLOBAL_ID", "ELEMENT_GLOBAL_ID2", "cutecod
 #ja.cutecodes<-subset(data.frame(ja.cutecodes), !(ja.cutecodes %in% out$cutecode) & ja.cutecodes != "myotsept")$ja.cutecodes
 #ja.cutecodes<-subset(data.frame(mobi.cutecodes), !(mobi.cutecodes %in% out$cutecode))$mobi.cutecodes ##select only the cutecodes that don't appear in results
 
-#dir.create("temp_files")#; arcpy$management$CreateFileGDB("temp_files", "geodatabase", "CURRENT") ##only need the geodatabase if going to use tabulate area
+dir.create("temp_files"); arcpy$management$CreateFileGDB("temp_files", "geodatabase", "CURRENT") ##only need the geodatabase if going to use tabulate area
 jur.dat <- dim(0) ##jurisdictional analysis data output
 for (j in 1:length(distribution.data.path)) { ##for each model; length(distribution.data.path)
   ##find species
@@ -80,7 +80,8 @@ for (j in 1:length(distribution.data.path)) { ##for each model; length(distribut
   #sp.manage$area_m2 <- st_area(sp.manage)
   
   ##ALTERNATIVE APPROACH; Tabulate Area
-  gdb.path<- "C:/Users/Max_Tarjan/Documents/ArcGIS/Projects/MyProject/MyProject.gdb/" ##need to write area tables to a geodatabase
+  #gdb.path<- "C:/Users/Max_Tarjan/Documents/ArcGIS/Projects/MyProject/MyProject.gdb/" ##need to write area tables to a geodatabase
+  gdb.path<- "temp_files/geodatabase.gdb/"
   arcpy$sa$TabulateArea(boundary.path, "BLM_Gen", distribution.data.path[j], "Value", paste0(gdb.path, sp.temp, "_area"), distribution.data.path[j])
   dat.temp <- arc.open(path = paste0(gdb.path, sp.temp, "_area")) %>% arc.select() %>% subset(select = -OBJECTID)
   
