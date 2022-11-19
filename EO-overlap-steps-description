@@ -1,0 +1,10 @@
+Steps for EO overlap analysis in ArcPro
+1. Add boundary layer and EO snapshot to program
+1b. Modify boundary layer if needed (e.g., pairwise intersect BLM admin boundary layer with states so have state attributes)
+2. Feature class to feature class - save EO snapshot to another folder (can subset EOs by element global ID at this point if have it coded)
+3. Calculate geometry attribute - calculate area of EO snapshot
+4. PairwiseIntersect of EOs and boundary
+5. Calculate Geometry attributes - calcualte area of EOs segments that have boundary attributes associated with them
+6. Wrangle data (see "SUBSET AND WRANGLE DATAFRAME FROM EO INTERSECTION" section in jurisdictional-analysis-EOs-code.R)
+  a. assign each EO to be within only one boundary type (select the EO segment that is largest, and keep the boundary attribute for that segment)
+  b. determine which EOs to include based on their attributes
