@@ -132,62 +132,176 @@ bld.intersect.df<-arc.select(bld.intersect, fields = c('EGT_ID', 'EO_ID', bounda
 ## Create one dataframe with required fields
 ## One row per EO
 ## Assign each EO to a single boundary category (select the boundary category that has the largest section of each EO contained)
-## first groups by the boundary areas and calculates total eo area in each category
-bld.boundary.max <- bld.intersect.df %>% 
-  dplyr::group_by(across(all_of(c("EGT_ID", "EO_ID", boundary.fields)))) %>% 
-  mutate(AREA_INT_GROUPED = sum(AREA_INT_M2)) %>% 
-  group_by(EGT_ID, EO_ID) %>% 
-  dplyr::slice_max(AREA_INT_GROUPED) 
+## First groups by the boundary areas and calculates total eo area in each category (may add up to more than 100% of EO area because some slivers overlap - there are multiple managers for the area)
+# bld.boundary.max <- bld.intersect.df %>% 
+#   dplyr::group_by(across(all_of(c("EGT_ID", "EO_ID", boundary.fields)))) %>% 
+#   mutate(AREA_INT_GROUPED = sum(AREA_INT_M2)) %>% 
+#   group_by(EGT_ID, EO_ID) %>% 
+#   dplyr::slice_max(AREA_INT_GROUPED) 
 
 ## Remove duplicate BLM_Gen assignments according to a hierarchy (duplicates occur due to overlapping polygons in the BLM admin boundary layer)
 ## Define order of hierarchy
-bld.boundary.max$BLM_Gen <- factor(bld.boundary.max$BLM_Gen, levels = c("BLM", "US Forest Service", "State", "Other Federal", "Bureau of Indian Affairs", "Private", "Other, Unknown"))
-
-bld.boundary.max <- bld.boundary.max[order(bld.boundary.max$BLM_Gen),]
-
-bld.boundary.max <- bld.boundary.max[!duplicated(bld.boundary.max[,c('EGT_ID', 'EO_ID')]),]
+# bld.boundary.max$BLM_Gen <- factor(bld.boundary.max$BLM_Gen, levels = c("BLM", "US Forest Service", "State", "Other Federal", "Bureau of Indian Affairs", "Private", "Other, Unknown"))
+# 
+# bld.boundary.max <- bld.boundary.max[order(bld.boundary.max$BLM_Gen),]
+# 
+# bld.boundary.max <- bld.boundary.max[!duplicated(bld.boundary.max[,c('EGT_ID', 'EO_ID')]),]
 
 ## Join the EO data with boundary data
-bld.blm <- left_join(x = bld.df, y = bld.boundary.max)
+# bld.blm <- left_join(x = bld.df, y = bld.boundary.max)
+
+##ALTERNATIVE TO SELECTING THE AGENCY WITH MOST OF THE EO. INSTEAD ALLOW THE EOS TO BE SPLIT BETWEEN AGENCIES
+## Join the EO data with boundary data (there are duplicate rows for EOs if they are in more than 1 jurisdiction)
+bld.blm <- left_join(x = bld.df, y = bld.intersect.df)
 
 ## Write out results
 write.csv(bld.blm, paste0(out.folder, "/EOxBLMBoundary.csv"), row.names = F)
 
 ## Read in overall results
-bld.blm <- read.csv("Output-2022-11-18/EOxBLMBoundary.csv")
+bld.blm <- read.csv("Output-2022-12-28/EOxBLMBoundary.csv")
+
+## Read in formatted results from AZ (source("Format-AZ-overlap-results-code.R"))
+az.data <- read.csv("C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and Rankings Project-FY21/Data/AZ_jurisdictional_request/Results-20230119/AZ_data_formatted.csv")
 
 ## FILTER EOs
 ## Remove EOs where the ID confidence is not certain
 ## EOs must be less than 30 years old
 bld.blm.filter <- bld.blm %>%
-  filter(ID_CONF != "N") %>%
-  filter(as.Date(LASTOBS_D, "%Y-%m-%d") >= Sys.Date()-30*365 | LOBS_MIN_Y >= as.numeric(format(Sys.Date()-30*365, "%Y")))
+  filter(ID_CONF %in% c("Y", "?") | is.na(ID_CONF)) %>%
+  filter(LOBS_Y >= (format(Sys.Date(), "%Y") %>% as.numeric() - 35) | LOBS_MIN_Y >= as.numeric(format(Sys.Date()-35*365, "%Y")) | (is.na(LOBS_Y) & is.na(LOBS_MIN_Y))) ## should use LOBS_Y instead of LASTOBS_D - text field is not consistent; and should include the NULLS if there is no last obs date
+
+## Skip filter step for testing
+#bld.blm.filter <- bld.blm
 
 ## Summarize results
 ## Number of EOs per species and number of EOs on BLM-admin lands
-eo.n <- bld.blm.filter %>% 
-  select(EGT_ID, EO_ID, BLM_Gen) %>% 
-  unique() %>% 
-  group_by(EGT_ID) %>% 
-  mutate(eos_total = n()) %>%
-  ungroup() %>%
-  group_by(EGT_ID, BLM_Gen) %>%
-  mutate(eos_BLM_Gen = n()) %>%
+## Assumes each EO is only in 1 jurisdiction
+# eo.n <- bld.blm.filter %>% 
+#   select(EGT_ID, EO_ID, BLM_Gen) %>% 
+#   unique() %>% 
+#   group_by(EGT_ID) %>% 
+#   mutate(Total_EOs_Rangewide_2023 = n()) %>%
+#   ungroup() %>%
+#   group_by(EGT_ID, BLM_Gen) %>%
+#   mutate(eos_BLM_Gen = n()) %>%
+#   select(-EO_ID) %>%
+#   unique() %>%
+#   arrange(EGT_ID) %>%
+#   spread(key = BLM_Gen, value = eos_BLM_Gen, fill = 0) %>%
+#   mutate(Percent_EOs_BLM_2023 = BLM/Total_EOs_Rangewide_2023*100)
+
+## Allows EOs to be split between multiple jurisdictions
+## Get number of unique EOs for each EGT ID
+eos_total <- bld.blm.filter %>%
+  select(EGT_ID, EO_ID) %>%
+  unique() %>%
+  group_by(EGT_ID) %>%
+  mutate(Total_EOs_Rangewide_2023 = n()) %>%
+  select(-EO_ID) %>%
+  unique()
+bld.blm.filter <- left_join(bld.blm.filter, eos_total)
+
+## Get number (fraction) of EOs for each jurisdiction
+# eo.n <- bld.blm.filter %>%
+#   mutate(AREA_INT_M2 = ifelse(is.na(AREA_INT_M2), 0, AREA_INT_M2)) %>%
+#   group_by(EO_ID) %>%
+#   mutate(eo_n = AREA_INT_M2/sum(AREA_INT_M2)) %>%
+#   ungroup() %>%
+#   group_by(EGT_ID, BLM_Gen) %>%
+#   mutate(eos_BLM_Gen = sum(eo_n)) %>%
+#   select(EGT_ID, BLM_Gen, Total_EOs_Rangewide_2023, eos_BLM_Gen) %>%
+#   unique() %>%
+#   arrange(EGT_ID) %>%
+#   spread(key = BLM_Gen, value = eos_BLM_Gen, fill = 0) %>%
+#   mutate(Percent_EOs_BLM_2023 = BLM/Total_EOs_Rangewide_2023*100) %>%
+#   rename("Total_EOs_BLM_2023" = "BLM") %>%
+#   select(-"<NA>")
+
+## Alternative - get number of EOs that overlap with each jurisdiction. The jurisdiction gets a 1 if any fraction of the EO overlaps
+eo.n <- bld.blm.filter %>%
+  mutate(AREA_INT_M2 = ifelse(is.na(AREA_INT_M2), 0, AREA_INT_M2)) %>%
+  select(BLM_Gen, EGT_ID, EO_ID) %>%
+  unique() %>%
+  group_by(BLM_Gen, EGT_ID) %>%
+  mutate(EOs_BLM_Gen = n()) %>%
   select(-EO_ID) %>%
   unique() %>%
-  arrange(EGT_ID) %>%
-  spread(key = BLM_Gen, value = eos_BLM_Gen, fill = 0) %>%
-  mutate(Percent_eo_BLM = BLM/eos_total*100)
+  spread(key = BLM_Gen, value = EOs_BLM_Gen, fill = 0) %>%
+  left_join(eos_total) %>%
+  mutate(Percent_EOs_BLM_2023 = BLM/Total_EOs_Rangewide_2023*100) %>%
+  rename("Total_EOs_BLM_2023" = "BLM") %>%
+  select(-"<NA>")
 
 ## Join results of jurisdictional analysis to esa SSS
 #sss.esa <- left_join(sss.esa, eo.n, by = c("NatureServe Element ID"= "EGT_ID"))
 
 #write.csv(sss.esa, paste0(out.folder, "/sss_esa_ja.csv"), row.names = F)
 
-## Number of EOs for each species that occurs in each BLM_Gen category by eo rank and subnation
-eo.ja.rank.subnation <- bld.blm.filter %>% 
-  subset(select = c(EGT_ID, EO_ID, STATE_ABBR, EORANK_CD, BLM_Gen)) %>% 
-  unique() %>% 
-  group_by(EGT_ID, STATE_ABBR, EORANK_CD, BLM_Gen) %>% 
-  summarise(n_EOs = n()) %>% 
-  data.frame()
+## Number of EOs for each species that occurs in each BLM_Gen category by eo rank and subnation; assumes each EO has one BLM_Gen assigned (no longer the case)
+# eo.ja.rank.subnation <- bld.blm.filter %>% 
+#   subset(select = c(EGT_ID, EO_ID, STATE_ABBR, EORANK_CD, BLM_Gen)) %>% 
+#   unique() %>% 
+#   group_by(EGT_ID, STATE_ABBR, EORANK_CD, BLM_Gen) %>% 
+#   summarise(n_EOs = n()) %>% 
+#   data.frame()
+
+## Percent of A/B ranked EOs on BLM lands
+## Get number of unique EOs ranked A/B for each EGT ID
+eos_AB_total <- bld.blm.filter %>%
+  filter(grepl(EORANK_CD, pattern = "A|B")) %>%
+  select(EGT_ID, EO_ID) %>%
+  unique() %>%
+  group_by(EGT_ID) %>%
+  mutate(Total_AB_EOs = n()) %>%
+  select(-EO_ID) %>%
+  unique()
+bld.blm.filter <- left_join(bld.blm.filter, eos_AB_total)
+
+## Get number (fraction) of EOs of rank A/B for each jurisdiction
+# eo.ab.n <- bld.blm.filter %>%
+#   filter(grepl(EORANK_CD, pattern = "A|B")) %>%
+#   mutate(AREA_INT_M2 = ifelse(is.na(AREA_INT_M2), 0, AREA_INT_M2)) %>%
+  # group_by(EO_ID) %>%
+  # mutate(eo_n = AREA_INT_M2/sum(AREA_INT_M2)) %>%
+  # ungroup() %>%
+  # group_by(EGT_ID, BLM_Gen) %>%
+  # mutate(eos_BLM_Gen = sum(eo_n)) %>%
+  # select(EGT_ID, BLM_Gen, Total_AB_EOs, eos_BLM_Gen) %>%
+  # unique() %>%
+  # arrange(EGT_ID) %>%
+  # spread(key = BLM_Gen, value = eos_BLM_Gen, fill = 0) %>%
+  # mutate(Percent_AB_EOs_BLM = BLM/Total_AB_EOs*100) %>%
+  # rename("Total_AB_EOs_BLM" = "BLM")
+
+## Alternative - give jurisdiction 1 EO for each EO that overlaps (any section of the EO overlaps)
+eo.ab.n <- bld.blm.filter %>%
+  filter(grepl(EORANK_CD, pattern = "A|B")) %>%
+  mutate(AREA_INT_M2 = ifelse(is.na(AREA_INT_M2), 0, AREA_INT_M2)) %>%
+  select(BLM_Gen, EGT_ID, EO_ID) %>%
+  unique() %>%
+  group_by(BLM_Gen, EGT_ID) %>%
+  mutate(EOs_BLM_Gen = n()) %>%
+  select(-EO_ID) %>%
+  unique() %>%
+  spread(key = BLM_Gen, value = EOs_BLM_Gen, fill = 0) %>%
+  left_join(eos_AB_total) %>%
+  mutate(Percent_AB_EOs_BLM = BLM/Total_AB_EOs*100) %>%
+  rename("Total_AB_EOs_BLM" = "BLM") %>%
+  select(-"<NA>")
+
+eo.n <- left_join(eo.n, subset(eo.ab.n, select = c(EGT_ID, Total_AB_EOs, Total_AB_EOs_BLM, Percent_AB_EOs_BLM)))
+
+write.csv(eo.n, paste0(out.folder, "/blm_eo_jurisdiction_results-", Sys.Date(), ".csv"), row.names = F)
+
+## Compare results to 2019 jurisdictional analysis
+ja2019 <- read_excel("C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and Rankings Project-FY21/Provided to BLM/BLM - Information for T & E Strategic Decision-Making - October 2022.xlsx", sheet = "BLM SSS Information by State", skip = 1) %>% 
+  mutate(Percent_EOs_BLM_2019 = ifelse(`Total Occurrences on BLM Lands (West)`==0,0, as.numeric(`Occurrences on BLM Lands (West) / Total Occurrences Rangewide`)*100),
+         Percent_Model_Area_BLM = `Percent Suitable Habitat on BLM Lands (West)`*100) %>%
+  rename("EGT_ID" = "Element Global ID") %>%
+  filter(`Elements Matched between BLM SSS List and NatureServe Data` !="-")
+# #bld.ids<-subset(bld.df, EGT_ID %in% ja$NatureServe_Element_ID)$EGT_ID %>% unique() ## SSS IDs in bld dataset
+# #bld.intersect.ids<-subset(bld.intersect.df, EGT_ID %in% ja$NatureServe_Element_ID)$EGT_ID %>% unique() ## SSS IDS in bld intersect
+# #bld.ids.missing<-bld.ids[which(!bld.ids %in% bld.intersect.ids)] ## SSS ids in bld but missing from intersect
+
+ja <- left_join(subset(ja2019, select= c(EGT_ID, Percent_EOs_BLM_2019, Percent_Model_Area_BLM)), subset(eo.n, select =c(EGT_ID, Percent_EOs_BLM_2023, Percent_AB_EOs_BLM)))
+plot(data = ja, Percent_EOs_BLM_2023 ~ Percent_EOs_BLM_2019)
