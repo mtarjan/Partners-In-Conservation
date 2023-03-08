@@ -14,7 +14,7 @@ eo.az<-read_xls("C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and
 
 az.intersect<-read_xls("C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and Rankings Project-FY21/Data/AZ_jurisdictional_request/Results-20230119/AZ_EO_intersect.xls")
 
-az.data <- left_join(y=eo.az, x=az.intersect) %>% rename(EGT_ID_AZ = EGT_ID, EO_ID_AZ=EO_ID)
+az.data <- left_join(y=eo.az, x=az.intersect, by = c("EGT_ID", "EGT_UID","EO_ID", "EO_UID", "SCOMNAME", "SNAME", "RND_S_RANK", "LASTOBS_D", "EORANK_CD")) %>% rename(EGT_ID_AZ = EGT_ID, EO_ID_AZ=EO_ID)
 
 ## Query biotics to get EGT_ID from central
 ## pull EGT_OU_UID and EGT_SEQ_UID from biotics to find the central biotics egt_id
@@ -58,4 +58,4 @@ az.data <- left_join(x=az.data, y = bld.df %>% select(EO_ID, EO_UID) %>% unique(
 
 az.data.sub <- az.data %>% mutate(STD_GRP = NA, ID_CONF = NA, FIRSTOBS_D = NA, LOBS_Y = as.numeric(substr(LASTOBS_D, 1, 4)), LOBS_MIN_Y = NA, LOBS_MAX_Y = NA, EORANK_D = EO_RANK_DA, AREA_INT_M2 = AREA_INT_KM2*1000000, EGT_ID = ELEMENT_GLOBAL_ID, EO_ID = EO_UID) %>% select(names(bld.blm))
 
-write.csv(az.data.sub, "C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and Rankings Project-FY21/Data/AZ_jurisdictional_request/Results-20230119/AZ_data_formatted.csv")
+write.csv(az.data.sub, "C:/Users/max_tarjan/NatureServe/BLM - BLM SSS Distributions and Rankings Project-FY21/Data/AZ_jurisdictional_request/Results-20230119/AZ_data_formatted.csv", row.names=F)
